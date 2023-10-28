@@ -1,10 +1,6 @@
 // Copyright 2020 Masataka Kurihara. All rights reserved. MIT license.
 
 import {
-    readableStreamFromReader,
- } from './deps.ts';
-
-import {
     XMLParseHandler,
     XMLParseContext,
     XMLParseEvent,
@@ -245,7 +241,7 @@ export class SAXParser extends ParserBase implements UnderlyingSink<Uint8Array> 
      * @param source Target XML.
      * @param encoding When the source is Deno.Reader or Uint8Array, specify the encoding.
      */
-    async parse(source: Deno.Reader | Uint8Array | string, encoding?: string) {
+    async parse(source: ReadableStream<unknown> | Uint8Array | string, encoding?: string) {
         this._encoding = encoding;
         if (typeof source === 'string') {
             this.chunk = source;
@@ -253,8 +249,8 @@ export class SAXParser extends ParserBase implements UnderlyingSink<Uint8Array> 
         } else if (source instanceof Uint8Array) {
             this.write(source);
         } else {
-            await readableStreamFromReader(source).pipeThrough(
-                new TextDecoderStream(this._encoding),
+            await source.pipeThrough(
+                new TextDecoderStream(this._encoding)
             ).pipeTo(
                 new WritableStream<string>({ write: str => this.parse(str, encoding) }),
             );
