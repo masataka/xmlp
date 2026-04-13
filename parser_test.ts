@@ -20,6 +20,52 @@ import {
     PullResult,
 } from './parser.ts';
 
+function byteChunkStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
+        start(controller: ReadableStreamDefaultController) {
+            for (let pos = 0; pos < bytes.length; ++pos) {
+                controller.enqueue(bytes.subarray(pos, pos+1));
+            }
+            controller.close();
+        }
+    });
+}
+
+function charChunkStream(str: string): ReadableStream<string> {
+    return new ReadableStream<string>({
+        start(controller: ReadableStreamDefaultController) {
+            for (let pos = 0; pos < str.length; ++pos) {
+                controller.enqueue(str.substring(pos, pos+1));
+            }
+            controller.close();
+        }
+    });
+}
+
+Deno.test('byteChunkStream writes single byte chunks', async () => {
+    const input = (new TextEncoder()).encode("abc");
+    const stream = byteChunkStream(input);
+    const output = new Uint8Array(input.length);
+    let outputpos = 0;
+    for await (const chunk of stream) {
+        assertEquals(chunk.length, 1);
+        output.set(chunk, outputpos);
+        outputpos += chunk.length;
+    }
+    assertEquals(output, input);
+});
+
+Deno.test('charChunkStream writes single char chunks', async () => {
+    const input = "abc";
+    const stream = charChunkStream(input);
+    let output = "";
+    for await (const chunk of stream) {
+        assertEquals(chunk.length, 1);
+        output = output + chunk;
+    }
+    assertEquals(output, input);
+});
+
 Deno.test('ParserBase chunk & hasNext & readNext & position', () => {
     // protected -> public visiblity
     class TestParser extends ParserBase {
@@ -72,6 +118,36 @@ Deno.test('SAXParser on & parse(Deno.Reader)', async () => {
     await parser.parse(file.readable);
     assertEquals(assertionCount, 3);
     assertEquals(elementCount, 18);
+});
+
+Deno.test('SAXParser UnderlyingSink chunks', async () => {
+    const parser = new SAXParser();
+
+    const input = (new TextEncoder()).encode("<x>ä</x>");
+    parser.on('text', (text) => {
+        assertEquals(text, "\u00E4");
+    });
+    await byteChunkStream(input).pipeTo(new WritableStream(parser));
+});
+
+Deno.test('SAXParser parse(ReadableStream<Uint8Array>)', async () => {
+    const parser = new SAXParser();
+    parser.on('text', (text) => {
+        assertEquals(text, "\u00E4");
+    });
+
+    const input = (new TextEncoder()).encode("<x>ä</x>");
+    await parser.parse(byteChunkStream(input));
+});
+
+Deno.test('SAXParser parse(ReadableStream<string>)', async () => {
+    const parser = new SAXParser();
+    parser.on('text', (text) => {
+        assertEquals(text, "\u00E4");
+    });
+
+    const input = "<x>ä</x>";
+    await parser.parse(charChunkStream(input));
 });
 
 Deno.test('SAXParser parse(Uint8Array)', () => {
